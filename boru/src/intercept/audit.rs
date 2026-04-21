@@ -143,7 +143,7 @@ impl TamperChain {
             let timestamp = parts[0].trim_start_matches('[').to_string();
             let severity = parts[1].trim_start_matches('[').to_string();
             let event = parts[2].trim_start_matches('[').to_string();
-            let verdict = parts[3..].join("] ").trim_start_matches('[').to_string();
+            let verdict = parts[3..].join("] ").trim_matches(|c| c == '[' || c == ']').to_string();
             Some((timestamp, severity, event, verdict))
         } else {
             None

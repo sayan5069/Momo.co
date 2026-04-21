@@ -37,7 +37,7 @@ enum Commands {
         #[arg(short, long)]
         input: PathBuf,
 
-        /// Security mode: hard, mid, easy, custom
+        /// Security mode: hard, mid, easy, audit, custom, audit
         #[arg(long, value_name = "MODE", default_value = "mid")]
         mode: String,
 
@@ -126,7 +126,7 @@ enum Commands {
         #[arg(short, long)]
         path: PathBuf,
 
-        /// Security mode: hard, mid, easy
+        /// Security mode: hard, mid, easy, audit
         #[arg(long, value_name = "MODE", default_value = "mid")]
         mode: String,
 
@@ -149,7 +149,7 @@ enum Commands {
         #[arg(short, long)]
         path: PathBuf,
 
-        /// Security mode: hard, mid, easy
+        /// Security mode: hard, mid, easy, audit
         #[arg(long, value_name = "MODE", default_value = "mid")]
         mode: String,
 

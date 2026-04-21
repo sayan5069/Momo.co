@@ -228,7 +228,7 @@ impl Runner for InterpreterRunner {
 
     fn execute(
         &self,
-        path: &Path,
+        _path: &Path,
         classification: &ClassificationResult,
     ) -> Result<RunnerVerdict> {
         let config = self
@@ -301,3 +301,15 @@ impl Runner for InterpreterRunner {
             .collect()
     }
 }
+
+// TODO: seccomp-bpf hardening — see docs/SECCOMP_PLAN.md
+// cfg(target_os = "linux")
+// fn apply_seccomp_profile(_policy: &SeccompPolicy) -> Result<()> {
+//     todo!("seccomp-bpf implementation pending WSL2/Linux verification")
+// }
+//
+// Placeholder for seccomp policy structure
+// pub struct SeccompPolicy {
+//     allowed_syscalls: Vec<&'static str>,
+//     denied_syscalls: Vec<&'static str>,
+// }

@@ -1,0 +1,62 @@
+[package]
+name = "boru"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# WASM sandbox - minimal features + WASI
+wasmtime = { version = "25", default-features = false, features = ["cranelift", "runtime", "parallel-compilation"] }
+wasmtime-wasi = { version = "25", default-features = false, features = ["preview1"] }
+
+# TUI (Phase 1 only) - ratatui with minimal features
+ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
+
+# CLI args - derive feature only
+clap = { version = "4.5", features = ["derive"] }
+
+# Error handling
+anyhow = { version = "1.0", default-features = false, features = ["std"] }
+
+# Async runtime - rt-multi-thread + macros only
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+
+# Serialization - derive feature only
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+
+# Structured logging - minimal
+tracing = { version = "0.1", default-features = false }
+
+# UUID generation - v4 + serde only
+uuid = { version = "1.11", default-features = false, features = ["v4", "serde", "std", "rng"] }
+
+# Date/time for audit logs (minimal features)
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "alloc"] }
+
+# Non-blocking terminal input
+crossterm = { version = "0.28", default-features = false, features = ["event-stream"] }
+
+# TOML parsing for config files
+toml = { version = "0.8", default-features = false, features = ["parse", "display"] }
+
+# Tracing subscriber for logging
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+
+# Directory paths for audit logs
+dirs = { version = "5.0", default-features = false }
+
+# SHA-256 for audit tamper chain and IAM token hashing
+sha2 = { version = "0.10", default-features = false }
+
+# File system events for watchdog (cross-platform, minimal features)
+notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
+
+[profile.release.package."*"]
+opt-level = 3

@@ -193,8 +193,8 @@ mod tests {
 
     #[test]
     fn test_entropy_random_like() {
-        // Random-like high entropy data
-        let data: Vec<u8> = (0..256).cycle().take(1000).collect();
+        // High entropy (uniform distribution)
+        let data: Vec<u8> = (0..=255).cycle().take(1000).collect();
         let entropy = calculate_entropy(&data);
         // Should be near maximum (8.0 for bytes)
         assert!(entropy > 7.0, "Expected high entropy, got {}", entropy);

@@ -1,10 +1,11 @@
-//! BORU Security Policy — 4 security modes with absolute invariants
+//! BORU Security Policy — 5 security modes with absolute invariants
 //!
 //! Security Modes:
 //! - HARD (🔴): Auto-block everything, always quarantine
 //! - MID (🟠): Default — block network/spawn, prompt on file access
 //! - EASY (🟡): Permissive — auto-allow reads, prompt on writes/network
 //! - CUSTOM (⚙️): User-defined rules with TUI prompts
+//! - AUDIT (🔵): Observe all — block nothing except invariants
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -20,6 +21,8 @@ pub enum SecurityMode {
     Easy,
     /// ⚙️ CUSTOM: User-defined rules with TUI prompts
     Custom,
+    /// 🔵 AUDIT: Observe all — block nothing except absolute invariants
+    Audit,
 }
 
 impl From<&str> for SecurityMode {
@@ -28,6 +31,7 @@ impl From<&str> for SecurityMode {
             "hard" | "strict" => SecurityMode::Hard,
             "easy" | "permissive" => SecurityMode::Easy,
             "custom" => SecurityMode::Custom,
+            "audit" => SecurityMode::Audit,
             _ => SecurityMode::Mid, // Default
         }
     }
@@ -40,6 +44,7 @@ impl std::fmt::Display for SecurityMode {
             SecurityMode::Mid => write!(f, "🟠 MID"),
             SecurityMode::Easy => write!(f, "🟡 EASY"),
             SecurityMode::Custom => write!(f, "⚙️ CUSTOM"),
+            SecurityMode::Audit => write!(f, "🔵 AUDIT"),
         }
     }
 }
@@ -155,7 +160,7 @@ impl SecurityPolicy {
 
     /// Evaluate file read access
     pub fn evaluate_file_read(&self, path: &Path, outside_workspace: bool) -> PolicyDecision {
-        // First check absolute invariants
+        // First check absolute invariants (applies to ALL modes including AUDIT)
         if AbsoluteInvariants::is_sensitive_path(path) {
             return PolicyDecision::AutoBlock {
                 reason: format!(
@@ -202,12 +207,13 @@ impl SecurityPolicy {
             SecurityMode::Custom => PolicyDecision::Prompt {
                 reason: format!("File read requires user decision: {}", path.display()),
             },
+            SecurityMode::Audit => PolicyDecision::AutoAllow, // AUDIT: observe only
         }
     }
 
     /// Evaluate file write access
     pub fn evaluate_file_write(&self, path: &Path, outside_workspace: bool) -> PolicyDecision {
-        // First check absolute invariants
+        // First check absolute invariants (applies to ALL modes including AUDIT)
         if AbsoluteInvariants::is_sensitive_path(path) {
             return PolicyDecision::AutoBlock {
                 reason: format!(
@@ -268,6 +274,7 @@ impl SecurityPolicy {
             SecurityMode::Custom => PolicyDecision::Prompt {
                 reason: format!("File write requires user decision: {}", path.display()),
             },
+            SecurityMode::Audit => PolicyDecision::AutoAllow, // AUDIT: observe only
         }
     }
 
@@ -287,6 +294,7 @@ impl SecurityPolicy {
             SecurityMode::Custom => PolicyDecision::Prompt {
                 reason: "Network access requires user decision".to_string(),
             },
+            SecurityMode::Audit => PolicyDecision::AutoAllow, // AUDIT: observe only, sinkhole captures
         }
     }
 
@@ -300,12 +308,13 @@ impl SecurityPolicy {
             SecurityMode::Easy | SecurityMode::Custom => PolicyDecision::Prompt {
                 reason: "Process execution requires user approval".to_string(),
             },
+            SecurityMode::Audit => PolicyDecision::AutoAllow, // AUDIT: observe only
         }
     }
 
     /// Evaluate environment variable access
     pub fn evaluate_env_access(&self, var_name: &str) -> PolicyDecision {
-        // Sensitive env vars are always blocked
+        // Sensitive env vars are always blocked (applies to ALL modes including AUDIT)
         let sensitive_vars = [
             "SSH_PRIVATE_KEY",
             "AWS_SECRET_ACCESS_KEY",
@@ -334,6 +343,7 @@ impl SecurityPolicy {
                 reason: format!("Environment variable access: {}", var_name),
             },
             SecurityMode::Easy | SecurityMode::Custom => PolicyDecision::AutoAllow,
+            SecurityMode::Audit => PolicyDecision::AutoAllow, // AUDIT: observe only
         }
     }
 
@@ -350,6 +360,7 @@ impl SecurityPolicy {
                     claimed_ext, real_type
                 ),
             },
+            SecurityMode::Audit => PolicyDecision::AutoAllow, // AUDIT: observe only
             _ => PolicyDecision::Prompt {
                 reason: format!(
                     "WARNING: Extension mismatch detected. Claimed: {}, Real: {}",
@@ -368,6 +379,7 @@ impl SecurityPolicy {
                     filename
                 ),
             },
+            SecurityMode::Audit => PolicyDecision::AutoAllow, // AUDIT: observe only
             _ => PolicyDecision::Prompt {
                 reason: format!("Unknown file type: {}", filename),
             },
@@ -395,6 +407,7 @@ mod tests {
         assert_eq!(SecurityMode::from("easy"), SecurityMode::Easy);
         assert_eq!(SecurityMode::from("permissive"), SecurityMode::Easy);
         assert_eq!(SecurityMode::from("custom"), SecurityMode::Custom);
+        assert_eq!(SecurityMode::from("audit"), SecurityMode::Audit);
         assert_eq!(SecurityMode::from("unknown"), SecurityMode::Mid); // Default
     }
 
@@ -483,6 +496,44 @@ mod tests {
         let policy = SecurityPolicy::new(SecurityMode::Hard);
 
         let result = policy.evaluate_unknown_file("mystery.xyz");
+        assert!(matches!(result, PolicyDecision::AutoBlock { .. }));
+    }
+
+    #[test]
+    fn test_audit_mode_allows_all() {
+        let policy = SecurityPolicy::new(SecurityMode::Audit);
+
+        // AUDIT mode should allow file reads
+        let result = policy.evaluate_file_read(Path::new("/etc/passwd"), true);
+        assert!(matches!(result, PolicyDecision::AutoAllow));
+
+        // AUDIT mode should allow file writes
+        let result = policy.evaluate_file_write(Path::new("/tmp/test.txt"), true);
+        assert!(matches!(result, PolicyDecision::AutoAllow));
+
+        // AUDIT mode should allow network
+        let result = policy.evaluate_network(Some("example.com"));
+        assert!(matches!(result, PolicyDecision::AutoAllow));
+
+        // AUDIT mode should allow process spawn
+        let result = policy.evaluate_process_spawn();
+        assert!(matches!(result, PolicyDecision::AutoAllow));
+
+        // AUDIT mode should allow env access
+        let result = policy.evaluate_env_access("HOME");
+        assert!(matches!(result, PolicyDecision::AutoAllow));
+    }
+
+    #[test]
+    fn test_audit_mode_respects_invariants() {
+        let policy = SecurityPolicy::new(SecurityMode::Audit);
+
+        // Even AUDIT mode should block sensitive paths
+        let result = policy.evaluate_file_read(Path::new("/home/user/.ssh/id_rsa"), false);
+        assert!(matches!(result, PolicyDecision::AutoBlock { .. }));
+
+        // Even AUDIT mode should block sensitive env vars
+        let result = policy.evaluate_env_access("AWS_SECRET_ACCESS_KEY");
         assert!(matches!(result, PolicyDecision::AutoBlock { .. }));
     }
 }

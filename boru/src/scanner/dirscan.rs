@@ -349,9 +349,35 @@ impl DirectoryScanner {
         entropy: &EntropyResult,
         hash_status: &HashCheckResult,
     ) -> (Verdict, Option<String>) {
-        // Known bad always takes precedence
+        // Known bad always takes precedence (even in AUDIT mode — this is invariant)
         if let HashCheckResult::KnownBad { name, .. } = hash_status {
             return (Verdict::KnownBad, Some(format!("Hash match: {}", name)));
+        }
+
+        // In AUDIT mode, report findings but don't flag as Critical/Suspicious
+        // The scan is purely informational in AUDIT mode
+        if self.mode == SecurityMode::Audit {
+            if !classification.extension_matches_magic {
+                let real_type = format!("{:?}", classification.class);
+                return (Verdict::Clean, Some(format!(
+                    "[AUDIT] Extension mismatch → {}, entropy: {:.1}",
+                    real_type, entropy.score
+                )));
+            }
+            match entropy.verdict {
+                EntropyVerdict::Critical(score) => {
+                    return (Verdict::Clean, Some(format!(
+                        "[AUDIT] High entropy ({:.2}): likely packed/encrypted", score
+                    )));
+                }
+                EntropyVerdict::Suspicious(score) => {
+                    return (Verdict::Clean, Some(format!(
+                        "[AUDIT] Elevated entropy ({:.2}): may be compressed", score
+                    )));
+                }
+                _ => {}
+            }
+            return (Verdict::Clean, None);
         }
 
         // Extension mismatch is always suspicious

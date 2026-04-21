@@ -9,6 +9,9 @@ use std::path::PathBuf;
 /// Socket configuration (GATE 3: all paths centralized here)
 pub mod config;
 
+/// Ecosystem integration (auto-discovery with Nuki/Suji)
+pub mod ecosystem;
+
 /// Socket stubs for ZUNO and SABA (Phase 2)
 pub mod stubs;
 

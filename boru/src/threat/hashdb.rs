@@ -62,6 +62,16 @@ pub enum HashStatus {
     Unknown,
 }
 
+impl std::fmt::Display for HashStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HashStatus::Clean => write!(f, "Clean"),
+            HashStatus::KnownBad(entry) => write!(f, "KNOWN BAD: {} ({})", entry.name, entry.family),
+            HashStatus::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
 /// Hash database
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HashDB {

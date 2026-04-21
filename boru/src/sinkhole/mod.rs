@@ -136,8 +136,18 @@ pub struct SinkholeStats {
 /// Check if sinkhole should be used for this mode
 pub fn should_sinkhole(mode: crate::cage::policy::SecurityMode) -> bool {
     // HARD mode: DROP immediately. No sinkhole.
-    // MID/EASY/CUSTOM: Route to sinkhole
+    // MID/EASY/CUSTOM: Route to sinkhole then BLOCK
+    // AUDIT: Route to sinkhole, capture, then ALLOW (full intelligence)
     !matches!(mode, crate::cage::policy::SecurityMode::Hard)
+}
+
+/// Get sinkhole verdict for this mode
+pub fn sinkhole_verdict(mode: crate::cage::policy::SecurityMode) -> &'static str {
+    match mode {
+        crate::cage::policy::SecurityMode::Hard => "DROPPED",
+        crate::cage::policy::SecurityMode::Audit => "SINKHOLED_OBSERVED",
+        _ => "SINKHOLED_BLOCKED",
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +161,16 @@ mod tests {
         assert!(should_sinkhole(SecurityMode::Mid));
         assert!(should_sinkhole(SecurityMode::Easy));
         assert!(should_sinkhole(SecurityMode::Custom));
+        assert!(should_sinkhole(SecurityMode::Audit));
+    }
+
+    #[test]
+    fn test_sinkhole_verdict() {
+        assert_eq!(sinkhole_verdict(SecurityMode::Hard), "DROPPED");
+        assert_eq!(sinkhole_verdict(SecurityMode::Mid), "SINKHOLED_BLOCKED");
+        assert_eq!(sinkhole_verdict(SecurityMode::Easy), "SINKHOLED_BLOCKED");
+        assert_eq!(sinkhole_verdict(SecurityMode::Custom), "SINKHOLED_BLOCKED");
+        assert_eq!(sinkhole_verdict(SecurityMode::Audit), "SINKHOLED_OBSERVED");
     }
 
     #[test]

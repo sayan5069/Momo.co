@@ -220,6 +220,18 @@ impl Watchdog {
             // Handle critical/known bad
             match result.verdict {
                 Verdict::Critical | Verdict::KnownBad => {
+                    // In AUDIT mode, just log — don't quarantine
+                    if self.config.mode == SecurityMode::Audit {
+                        let request_id = uuid::Uuid::new_v4();
+                        crate::cage::log_intercept(
+                            crate::cage::Severity::High,
+                            "WATCHDOG_OBSERVED",
+                            &format!("AUDIT mode: Detected {} but not quarantining", result.verdict),
+                            request_id,
+                        );
+                        return Ok(());
+                    }
+
                     // Quarantine the file
                     let reason = result.reason.clone().unwrap_or_else(|| "Watchdog detection".to_string());
                     match crate::intercept::quarantine::quarantine_file(
