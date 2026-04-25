@@ -1,8 +1,7 @@
 //! BORU Classifier — Universal file type detection
 //!
-//! Detects file types using two-layer approach:
-//! 1. Extension hint
-//! 2. Magic bytes verification (extension lying = CRITICAL event)
+//! HOTFIX 1: Detection is magic-bytes-first. Extensions are NEVER trusted.
+//! detect_from_bytes() is the sole source of truth for file classification.
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -12,9 +11,9 @@ pub mod magic;
 /// Classification result with mismatch detection
 #[derive(Debug, Clone)]
 pub struct ClassificationResult {
-    /// Detected file class
+    /// Detected file class (from magic bytes — the truth)
     pub class: magic::FileClass,
-    /// File extension from path
+    /// File extension from path (the claim — may be a lie)
     pub claimed_extension: String,
     /// Whether extension matches magic bytes detection
     pub extension_matches_magic: bool,
@@ -22,6 +21,8 @@ pub struct ClassificationResult {
     pub header_preview: Vec<u8>,
     /// File size in bytes
     pub file_size: u64,
+    /// If mismatch: human-readable description of real type
+    pub mismatch_detail: Option<String>,
 }
 
 /// File type classifier
@@ -35,17 +36,15 @@ impl FileClassifier {
 
     /// Classify a file by path
     ///
-    /// Returns the classification result, checking for extension/magic mismatch
+    /// HOTFIX 1: Magic bytes are the SOLE source of truth.
+    /// Extension is recorded but never used for classification.
     pub fn classify(&self, path: &Path) -> Result<ClassificationResult> {
-        // Get extension hint
+        // Get extension claim (may be empty, may be a lie)
         let claimed_extension = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_string();
-
-        // Get expected class from extension
-        let claimed_class = magic::class_from_extension(&claimed_extension);
 
         // Read first 512 bytes for magic detection
         let header_preview = self.read_header(path)?;
@@ -53,40 +52,23 @@ impl FileClassifier {
             .with_context(|| format!("Failed to read metadata for {}", path.display()))?
             .len();
 
-        // Detect from magic bytes
-        let magic_class = magic::class_from_magic_bytes(&header_preview)
-            .unwrap_or(magic::FileClass::Unknown);
+        // Detect from magic bytes — this is the ONLY trusted classification
+        let detected_class = magic::detect_from_bytes(&header_preview);
 
-        // Determine if there's a mismatch
-        // Note: ZIP-based formats (docx, xlsx) will be detected as ZIP by magic
-        let extension_matches_magic = if magic_class == magic::FileClass::Zip {
-            matches!(
-                claimed_class,
-                magic::FileClass::Zip
-                    | magic::FileClass::OfficeDoc
-                    | magic::FileClass::OfficeXlsx
-                    | magic::FileClass::OfficePptx
-            )
-        } else if magic_class == magic::FileClass::Unknown {
-            // No magic detection, trust extension for interpreted languages
-            claimed_class != magic::FileClass::Unknown
-        } else {
-            claimed_class == magic_class
-        };
-
-        // Final class: prefer magic detection, fall back to extension
-        let class = if magic_class != magic::FileClass::Unknown {
-            magic_class
-        } else {
-            claimed_class
-        };
+        // Check for extension mismatch
+        let mismatch = magic::check_extension_mismatch(path, &detected_class);
+        let extension_matches_magic = mismatch.is_none();
+        let mismatch_detail = mismatch.map(|(ext, real_desc)| {
+            format!("File claims .{} but is actually: {}", ext, real_desc)
+        });
 
         Ok(ClassificationResult {
-            class,
+            class: detected_class,
             claimed_extension,
             extension_matches_magic,
             header_preview,
             file_size,
+            mismatch_detail,
         })
     }
 
@@ -117,6 +99,7 @@ impl Default for FileClassifier {
 pub fn is_dangerous_file(class: &magic::FileClass) -> bool {
     match class {
         magic::FileClass::Binary
+        | magic::FileClass::JavaClass
         | magic::FileClass::Shell
         | magic::FileClass::Python
         | magic::FileClass::JavaScript
@@ -136,6 +119,7 @@ pub fn is_executable(class: &magic::FileClass) -> bool {
         class,
         magic::FileClass::Wasm
             | magic::FileClass::Binary
+            | magic::FileClass::JavaClass
             | magic::FileClass::Python
             | magic::FileClass::JavaScript
             | magic::FileClass::TypeScript
@@ -156,7 +140,7 @@ pub fn is_executable(class: &magic::FileClass) -> bool {
 pub fn runner_for_class(class: &magic::FileClass) -> &'static str {
     match class {
         magic::FileClass::Wasm => "wasm",
-        magic::FileClass::Binary => "binary",
+        magic::FileClass::Binary | magic::FileClass::JavaClass => "binary",
         c if magic::is_interpreted(c) => "interpreter",
         c if magic::is_archive(c) => "archive",
         c if magic::is_static_document(c) => "scanner",
@@ -171,7 +155,6 @@ mod tests {
 
     #[test]
     fn test_classify_wasm_file() {
-        // Create temp WASM file
         let temp_dir = std::env::temp_dir().join("boru_test");
         let _ = std::fs::create_dir_all(&temp_dir);
         let temp_file = temp_dir.join("test.wasm");
@@ -193,10 +176,10 @@ mod tests {
 
     #[test]
     fn test_extension_mismatch_detection() {
-        // Create a file with .txt extension but PNG magic
+        // Create a file with .jpg extension but PNG magic bytes
         let temp_dir = std::env::temp_dir().join("boru_test");
         let _ = std::fs::create_dir_all(&temp_dir);
-        let temp_file = temp_dir.join("fake_text.txt");
+        let temp_file = temp_dir.join("fake_image.jpg");
 
         {
             let mut file = std::fs::File::create(&temp_file).unwrap();
@@ -208,7 +191,50 @@ mod tests {
 
         assert_eq!(result.class, magic::FileClass::Png);
         assert!(!result.extension_matches_magic);
-        assert_eq!(result.claimed_extension, "txt");
+        assert_eq!(result.claimed_extension, "jpg");
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_no_extension_file_classifies_without_crash() {
+        let temp_dir = std::env::temp_dir().join("boru_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let temp_file = temp_dir.join("noextension");
+
+        {
+            let mut file = std::fs::File::create(&temp_file).unwrap();
+            file.write_all(b"#!/usr/bin/env python3\nprint('hello')").unwrap();
+        }
+
+        let classifier = FileClassifier::new();
+        let result = classifier.classify(&temp_file).unwrap();
+
+        assert_eq!(result.class, magic::FileClass::Python);
+        assert!(result.extension_matches_magic); // No ext = no mismatch
+        assert_eq!(result.claimed_extension, "");
+
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_random_binary_disguised_as_pdf() {
+        let temp_dir = std::env::temp_dir().join("boru_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let temp_file = temp_dir.join("fake_invoice.pdf");
+
+        {
+            let mut file = std::fs::File::create(&temp_file).unwrap();
+            // Write ELF magic (not PDF)
+            file.write_all(b"\x7fELF\x02\x01\x01\x00").unwrap();
+        }
+
+        let classifier = FileClassifier::new();
+        let result = classifier.classify(&temp_file).unwrap();
+
+        assert_eq!(result.class, magic::FileClass::Binary);
+        assert!(!result.extension_matches_magic);
+        assert!(result.mismatch_detail.is_some());
 
         let _ = std::fs::remove_file(&temp_file);
     }

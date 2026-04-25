@@ -365,24 +365,61 @@ pub fn run_cage(
 }
 
 /// Static analysis check (dry-run)
+///
+/// HOTFIX 1: Reads actual file bytes. Reports extension mismatches as CRITICAL.
+/// Files with no extension are handled gracefully (no crash).
 pub fn check(input: PathBuf) -> Result<()> {
     use crate::classifier::FileClassifier;
+    use crate::classifier::magic;
     use crate::runner::RunnerRouter;
 
     if !input.exists() {
         bail!("Input file not found: {}", input.display());
     }
 
-    // Classify the file
+    let request_id = uuid::Uuid::new_v4();
+
+    // Classify the file (magic bytes are the sole source of truth)
     let classifier = FileClassifier::new();
     let classification = classifier.classify(&input)?;
 
     println!("✓ File classification:");
-    println!("  Extension: {}", classification.claimed_extension);
+    println!("  Path: {}", input.display());
+    println!("  Extension: {}", if classification.claimed_extension.is_empty() { "(none)" } else { &classification.claimed_extension });
     println!("  Detected: {:?}", classification.class);
-    println!("  Description: {}", crate::classifier::magic::class_description(&classification.class));
+    println!("  Description: {}", magic::class_description(&classification.class));
     println!("  Size: {} bytes", classification.file_size);
-    println!("  Magic match: {}", classification.extension_matches_magic);
+
+    // CRITICAL: Extension mismatch detection (Gate 7)
+    if !classification.extension_matches_magic {
+        let detail = classification.mismatch_detail.as_deref()
+            .unwrap_or("Extension does not match file content");
+
+        println!("\n🔴 CRITICAL — EXTENSION_MISMATCH");
+        println!("  {}", detail);
+        println!("  Claimed extension: .{}", classification.claimed_extension);
+        println!("  Actual type: {}", magic::class_description(&classification.class));
+        println!("  Severity: CRITICAL");
+
+        // Gate 7: Write to audit log BEFORE returning
+        log_intercept(
+            Severity::Critical,
+            "EXTENSION_MISMATCH",
+            &format!(
+                "CRITICAL: {} claims .{} but detected as {} ({})",
+                input.display(),
+                classification.claimed_extension,
+                magic::class_description(&classification.class),
+                detail,
+            ),
+            request_id,
+        );
+
+        // Exit with code 1 (blocked)
+        std::process::exit(1);
+    }
+
+    println!("  Magic match: ✅ true");
 
     // Check dependencies
     let router = RunnerRouter::new();
