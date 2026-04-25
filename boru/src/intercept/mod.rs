@@ -74,6 +74,12 @@ pub enum InterceptEvent {
         hash: String,
         entry: crate::threat::hashdb::HashEntry,
     },
+    /// A script was executed in the workspace
+    ScriptExecuted {
+        path: String,
+        interpreter: String,
+        exit_code: i32,
+    },
 }
 
 /// Centralized intercept layer that evaluates all rules
@@ -144,6 +150,9 @@ impl InterceptLayer {
             }
             InterceptEvent::KnownBadHash { path, hash, entry } => {
                 self.evaluate_known_bad_hash(path, hash, entry)
+            }
+            InterceptEvent::ScriptExecuted { path, interpreter, exit_code } => {
+                self.evaluate_script_executed(path, interpreter, *exit_code)
             }
         };
 
@@ -348,6 +357,17 @@ impl InterceptLayer {
         // We do not auto-quarantine here as that's up to the caller to handle if they want to,
         // but we unconditionally block.
         Verdict::Blocked { reason }
+    }
+
+    /// Evaluate script execution event
+    fn evaluate_script_executed(
+        &self,
+        _path: &str,
+        _interpreter: &str,
+        _exit_code: i32,
+    ) -> Verdict {
+        // Just an audit event, no blocking action required at this layer.
+        Verdict::Allowed
     }
 
     /// Log blocked actions (GATE 7 compliance)

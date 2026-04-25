@@ -140,7 +140,7 @@ enum Commands {
 
         /// Export report to file
         #[arg(long, value_name = "PATH")]
-        output: Option<PathBuf>,
+        report: Option<PathBuf>,
     },
 
     /// Start watchdog mode (real-time file monitoring)
@@ -445,7 +445,7 @@ fn run() -> Result<()> {
             mode,
             depth,
             format,
-            output,
+            report,
         } => {
             use cage::policy::SecurityMode;
 
@@ -461,12 +461,12 @@ fn run() -> Result<()> {
                 dir_scanner = dir_scanner.with_hash_db(db);
             }
 
-            let report = dir_scanner.scan(&path)?;
+            let report_data = dir_scanner.scan(&path)?;
 
             match format.as_str() {
                 "markdown" | "md" => {
-                    let md = report.to_markdown();
-                    if let Some(output_path) = output {
+                    let md = report_data.to_markdown();
+                    if let Some(output_path) = report {
                         std::fs::write(&output_path, &md)?;
                         println!("Report saved to {}", output_path.display());
                     } else {
@@ -474,9 +474,9 @@ fn run() -> Result<()> {
                     }
                 }
                 _ => {
-                    println!("{}", report.to_console_output());
-                    if let Some(output_path) = output {
-                        let md = report.to_markdown();
+                    println!("{}", report_data.to_console_output());
+                    if let Some(output_path) = report {
+                        let md = report_data.to_markdown();
                         std::fs::write(&output_path, &md)?;
                         println!("\nReport saved to {}", output_path.display());
                     }
