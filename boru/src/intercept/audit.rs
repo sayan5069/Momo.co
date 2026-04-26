@@ -24,8 +24,8 @@ pub fn compute_entry_hash(
     verdict: &str,
     prev_hash: &str,
 ) -> String {
-    let content = format!("{}{}{}{}{}", seq, timestamp, event_type, verdict, prev_hash);
-    format!("{:x}", Sha256::digest(content.as_bytes()))
+    let content = format!("{}|{}|{}|{}|{}", seq, timestamp.trim(), event_type.trim(), verdict.trim_end(), prev_hash.trim());
+    format!("{:064x}", Sha256::digest(content.as_bytes()))
 }
 
 /// Audit entry with chain hash
