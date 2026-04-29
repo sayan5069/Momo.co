@@ -1,0 +1,23 @@
+[package]
+name = "yomi"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kshitij"]
+description = "Local file indexer for momo-ecosystems"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ignore = "0.4"
+notify = "6.1"
+blake3 = "1.5"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+ratatui = "0.24"
+crossterm = "0.27"
+sled = "0.34"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
